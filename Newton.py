@@ -2,6 +2,7 @@ import numpy as np
 import csv
 from matplotlib import pyplot as plt
 import scipy.constants as const
+from scipy.integrate import solve_ivp
 
 grav_cons=const.G
 sun_mass=(1.989)*10**30 # in kg
@@ -24,6 +25,7 @@ def read_csv(file_name):
     return np.asarray(logg),np.asarray(mass)
 
 def mass_selection(mass,radius,threshold):
+    # Seperates the mass and radius depending on the threshold, returns the data to include and exclude
     
     false_list= mass>threshold
     true_list= mass<=threshold
@@ -33,7 +35,31 @@ def mass_selection(mass,radius,threshold):
     selected_radius=radius[true_list]
     
     return selected_mass,selected_radius,not_selected_mass,not_selected_radius
+
+def lane_emden_RHS(t,y,n):
+    # t corresponds to xi 
+    RHS=np.zeros(y.shape[0])
+    RHS[0]=y[1]
+    if t == 0 :
+        RHS[1]=0
+    else:
+        RHS[1]=-(2/t)*y[1]-y[0]**n
+        
+    return RHS.flatten()
     
+    
+def lane_emden_solver(n,xi_lim=15):
+    
+    step_size=10**-3
+    theta_0=1
+    dtheta_0=0
+    init=np.array([theta_0,dtheta_0]).flatten()
+    solution=solve_ivp(lane_emden_RHS,[0,xi_lim],init,max_step=step_size,args=([float(n)]))
+    xi=solution.t
+    theta=solution.y[0,:]
+    dtheta=solution.y[1,:]
+    
+    return xi,theta,dtheta
     
     
 
@@ -84,11 +110,31 @@ def newton_c(mass,r):
     plt.show()
     print('The slope is ' + str(coefs[0]))
     
+    n=1.5
+    with np.errstate(invalid='ignore'):
+        xi,theta,dtheta=lane_emden_solver(n,15)
+    xi_n=xi[-1]
+    theta_n=theta[-1]
+    dtheta_n=dtheta[-1]
+    grav_cons_scaled=grav_cons*sun_mass/(earth_radi**3)
+    k_val=(4*np.pi*grav_cons_scaled/(2.5))*np.power((np.exp(intercept)/(-4*np.pi*(xi_n**5)*dtheta_n)),1/3)
+    
+    print('The K* value is ' + str(k_val)+' scaled with respect to solar mass and earth radius' )
+    
+    rho_c= (-small_mass*xi_n)/(4*dtheta_n*np.pi*np.power(small_r,3))
+    plt.scatter(small_mass,rho_c)
+    plt.ylabel('Central Density (in Solar Mass / Earth Radius^3)')
+    plt.xlabel('Mass (in Solar Mass)')
+    plt.title('Central Density vs Mass')
+    plt.show()
+
+
     
 
 
 mass,r=newton_b()
 newton_c(mass, r)
+
 
 
   
