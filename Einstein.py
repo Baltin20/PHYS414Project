@@ -2,6 +2,8 @@ import numpy as np
 from matplotlib import pyplot as plt
 import scipy.constants as const
 from scipy.integrate import solve_ivp
+from scipy.interpolate import interp1d
+from scipy.optimize import newton
 
 grav_cons=const.G
 sun_mass=(1.989)*10**30 # in kg
@@ -25,7 +27,8 @@ def dm(mass):
 def tov_RHS(t,y,k_ns):
     # t stands for r here
     RHS=np.zeros(y.shape[0])
-    rho=np.sqrt(y[2]/k_ns)
+    with np.errstate(invalid='ignore'): # p overshoots 0 and stop but last value results in warning. For output to be aesthetic I catch the warning
+        rho=np.sqrt(y[2]/k_ns)
     RHS[0]=4*np.pi*(t**2)*rho
     if t==0:
         RHS[1]=0
@@ -45,14 +48,14 @@ stop_sign.terminal= True
 stop_sign.direction=-1
 
 
-def tov_solver(p_c,r_lim=30):
+def tov_solver(p_c,k,r_lim=30):
 
     mass_init=0
     dilation_init=0
     pressure_init=p_c
     baryonic_mass_init=0
     init=np.array([mass_init, dilation_init, pressure_init,baryonic_mass_init]).flatten()
-    solution=solve_ivp(tov_RHS,[0,r_lim],init,events=stop_sign,args=([int(k_ns)]))
+    solution=solve_ivp(tov_RHS,[0,r_lim],init,events=stop_sign,args=([int(k)]))
     radius=solution.t[-1]
     mass=solution.y[0,-1]
     baryonic_mass=solution.y[3,-1]  
@@ -67,7 +70,7 @@ def einstein_abc():
     radius=np.zeros_like(pressure_c_span)
     baryonic_mass=np.zeros_like(pressure_c_span)
     for i in range(pressure_c_span.shape[0]):
-        mass[i],radius[i],baryonic_mass[i]=tov_solver(pressure_c_span[i],r_lim=30)
+        mass[i],radius[i],baryonic_mass[i]=tov_solver(pressure_c_span[i],k_ns,r_lim=30)
 
     plt.plot(radius*length_scale/1000,mass)
     plt.ylabel('Mass (in Solar Mass)')
@@ -101,8 +104,45 @@ def einstein_abc():
     
     plt.legend()
     plt.show()
+    print('Max NS Mass allowed: '+ str(np.max(stable_mass))+' in Solar Mass.')
+    
+def einstein_d():
+    
+    k_min=20
+    k_max=180
+    n_sample=40
+    k_span=np.linspace(k_min,k_max,n_sample)
+    rho_c_span=np.linspace(10**-5,10**-2,n_sample)
+    max_mass=np.zeros_like(k_span)
+    pressure_c_span=k_ns*(rho_c_span**2)
+    for j in range(k_span.shape[0]):
+        mass=np.zeros_like(rho_c_span)
+        for i in range(pressure_c_span.shape[0]):
+            mass[i],a,b=tov_solver(pressure_c_span[i],k_span[j],r_lim=30)
+        drho=rho_c_span[1]-rho_c_span[0]
+        dmass=dm(mass)/drho
+        true_list=dmass>0
+        stable_mass,stable_rho=mass[true_list],rho_c_span[true_list]
+        max_mass[j]=np.max(stable_mass)
+
+    plt.scatter(k_span,max_mass,label='Max Mass') # the sampling size is small therefore instead of plot I will be using cubic spline
+    cubic_spline=interp1d(k_span, max_mass,kind='cubic')
+    spline_span=np.linspace(k_min,k_max,n_sample*100)    
+    plt.plot(k_span,cubic_spline(k_span),color='red',label='Cubic Spline')
+    plt.legend()
+    plt.xlabel('K values')
+    plt.ylabel('Max NS Mass (in Solar Mass)')
+    plt.title('Max Mass vs K')
+    plt.show()
+    observed_m=2.14
+    root_to_find= lambda x: cubic_spline(x)-observed_m
+    max_k=newton(root_to_find,100)# the value 110 was chosen from the plot
+    print('Max k allowed: '+ str(max_k))
+    
     
 einstein_abc() 
+einstein_d()
+
     
 
 
