@@ -1,3 +1,4 @@
+#Newton.py
 import numpy as np
 import csv
 from matplotlib import pyplot as plt
@@ -153,7 +154,7 @@ def final():
     mass,r=newton_b()
     newton_c(mass, r)
 
-final()
+
 
 
 

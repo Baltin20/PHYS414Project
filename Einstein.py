@@ -1,4 +1,5 @@
 import numpy as np
+#Einstein.py
 from matplotlib import pyplot as plt
 import scipy.constants as const
 from scipy.integrate import solve_ivp
@@ -173,7 +174,7 @@ def final():
     einstein_c(mass)
     einstein_d()
 
-final()
+
     
 
 
