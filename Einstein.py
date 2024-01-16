@@ -14,7 +14,7 @@ time_scale=(4.927)*10**-6 # in s
 
 
 def dm(mass):
-    # 
+    # Taking a vector returns its first derivative with 3 point stencil
     l_shift=(1/2)*np.roll(mass,-1) # corresponds to +drho
     r_shift=-(1/2)*np.roll(mass,1) # corresponds to -drho
     dm=l_shift+r_shift
@@ -25,7 +25,8 @@ def dm(mass):
         
 
 def tov_RHS(t,y,k_ns):
-    # t stands for r here
+    # t stands for r. This function returns the RHS of ODES. It also includes the RHS of baryonic mass ODE
+    #y[0]=mass,y[1]=time dilation,y[2]=pressure,y[3]=baryonic mass
     RHS=np.zeros(y.shape[0])
     with np.errstate(invalid='ignore'): # p overshoots 0 and stop but last value results in warning. For output to be aesthetic I catch the warning
         rho=np.sqrt(y[2]/k_ns)
@@ -42,6 +43,8 @@ def tov_RHS(t,y,k_ns):
     return RHS.flatten()
 
 def stop_sign(t,y,k_ns):
+    # This is an event function that must stop the calculation when the sign changes
+    # I realized since the inside of square root of rho becomes - (tov_RHS function) the tov_solver automatically stops, I was only required to handle warning but better to be safe
     return y[2]
 
 stop_sign.terminal= True
@@ -49,7 +52,9 @@ stop_sign.direction=-1
 
 
 def tov_solver(p_c,k,r_lim=30):
-
+    # This is the solver that evolves mass,time_dilation_pressure and baryonic mass in r
+    # it returns the last value of mass,radius and baronic mass
+    # step size was not specified this time
     mass_init=0
     dilation_init=0
     pressure_init=p_c
@@ -62,22 +67,33 @@ def tov_solver(p_c,k,r_lim=30):
     
     return mass,radius,baryonic_mass
 
-def einstein_abc():
+def einstein_a():
+    # The main function for einstein part a iterating over the pressure finds mass, radius,baryonic_mass
+    # Return thhose arrays therefore it is important to be computed first
+    
     n_sample=100
-    rho_c_span=np.linspace(10**-5,10**-2,n_sample) 
+    rho_start=10**-5
+    rho_stop=10**-2
+    # Initialization
+    rho_c_span=np.linspace(rho_start,rho_stop,n_sample) 
     pressure_c_span=k_ns*(rho_c_span**2)
     mass=np.zeros_like(pressure_c_span)
     radius=np.zeros_like(pressure_c_span)
     baryonic_mass=np.zeros_like(pressure_c_span)
+    
     for i in range(pressure_c_span.shape[0]):
         mass[i],radius[i],baryonic_mass[i]=tov_solver(pressure_c_span[i],k_ns,r_lim=30)
 
-    plt.plot(radius*length_scale/1000,mass)
+    plt.plot(radius*length_scale/1000,mass)# to use km
     plt.ylabel('Mass (in Solar Mass)')
     plt.xlabel('Radius (in km)')
     plt.title('M vs R')
     plt.show()
+    return mass,radius,baryonic_mass
 
+def einstein_b(mass,radius,baryonic_mass):
+    # The main function for einstein part b, uses the already computed mass, radius and baryonic masses to plot
+   
     frac_bind_energy=(baryonic_mass-mass)/mass
     plt.plot(radius*length_scale/1000,frac_bind_energy)
     plt.ylabel('Fractional Binding Energy')
@@ -85,6 +101,12 @@ def einstein_abc():
     plt.title(r'$\Delta$ vs R')
     plt.show()
 
+def einstein_c(mass):
+    # The main function for einstein part c,uses already computed mass.
+    # Finds the stable and unstable masses depending on the sign of derivative and the max stable mass
+    
+    n_sample=100
+    rho_c_span=np.linspace(10**-5,10**-2,n_sample) 
     """
     plt.scatter(rho_c_span,mass) # I can clearly see that there is a maximum point and after that the solution is unstable
                                  #But I assume instructor want me to use a numerical differentiation otherwise it would be easy task therefore I won't be abusing the graph
@@ -107,10 +129,12 @@ def einstein_abc():
     print('Max NS Mass allowed: '+ str(np.max(stable_mass))+' in Solar Mass.')
     
 def einstein_d():
+    # The main function for einstein part d, For every value of k iterates over the pressure and finds the maximum stable mass for specific K value
+    # then from that values plots a max mass vs K curve
     
     k_min=20
     k_max=180
-    n_sample=40
+    n_sample=40 # Computatinally costly operatioons therefore n is small
     k_span=np.linspace(k_min,k_max,n_sample)
     rho_c_span=np.linspace(10**-5,10**-2,n_sample)
     max_mass=np.zeros_like(k_span)
@@ -118,7 +142,7 @@ def einstein_d():
     for j in range(k_span.shape[0]):
         mass=np.zeros_like(rho_c_span)
         for i in range(pressure_c_span.shape[0]):
-            mass[i],a,b=tov_solver(pressure_c_span[i],k_span[j],r_lim=30)
+            mass[i],a,b=tov_solver(pressure_c_span[i],k_span[j],r_lim=30) #radius and baryon mass not important
         drho=rho_c_span[1]-rho_c_span[0]
         dmass=dm(mass)/drho
         true_list=dmass>0
@@ -126,7 +150,7 @@ def einstein_d():
         max_mass[j]=np.max(stable_mass)
 
     plt.scatter(k_span,max_mass,label='Max Mass') # the sampling size is small therefore instead of plot I will be using cubic spline
-    cubic_spline=interp1d(k_span, max_mass,kind='cubic')
+    cubic_spline=interp1d(k_span, max_mass,kind='cubic')# furthermore cubic spline is required to use in root finnding to find max K value possible for the observed max mass
     spline_span=np.linspace(k_min,k_max,n_sample*100)    
     plt.plot(k_span,cubic_spline(k_span),color='red',label='Cubic Spline')
     plt.legend()
@@ -136,13 +160,20 @@ def einstein_d():
     plt.show()
     observed_m=2.14
     root_to_find= lambda x: cubic_spline(x)-observed_m
-    max_k=newton(root_to_find,100)# the value 110 was chosen from the plot
+    max_k=newton(root_to_find,110)# the value 110 was chosen from the plot
     print('Max k allowed: '+ str(max_k))
     
     
-einstein_abc() 
-einstein_d()
 
+def final():
+    #main function to execute newton functions
+
+    mass,radius,baryonic_mass=einstein_a()
+    einstein_b(mass, radius, baryonic_mass) 
+    einstein_c(mass)
+    einstein_d()
+
+final()
     
 
 
